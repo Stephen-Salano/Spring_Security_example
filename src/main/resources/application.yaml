@@ -3,8 +3,8 @@ spring:
     name: spring-security
   datasource:
     url: ${POSTGRES_URL}
-    username: postgres
-    password: Microsoft
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
