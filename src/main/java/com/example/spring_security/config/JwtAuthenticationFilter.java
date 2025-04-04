@@ -7,6 +7,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -19,6 +21,9 @@ import java.io.IOException;
 // Remove @Component annotation - we'll create this as a bean in SecurityConfig
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    // implementing a logger
+    private static final Logger logger = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
@@ -33,23 +38,30 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         final String jwt;
         final String username;
 
+        // Log incoming request with path and method
+        logger.debug("Processing request: {} {}", request.getMethod(), request.getRequestURI());
+
         // Check if Authorization header exists and starts with "Bearer "
         if (authHeader == null || !authHeader.startsWith("Bearer ")){ // Fixed typo in "Bearer"
+            logger.debug("No JWT token found in request headers");
             filterChain.doFilter(request, response);
             return;
         }
 
         // Extract JWT token
         jwt = authHeader.substring(7);
+        logger.debug("JWT token found in request");
 
         try {
             // Extract username from token
             username = jwtService.extractUserName(jwt);
+            logger.debug("Username extrated from JWT: {}", username);
 
             // If username exists and no authentication exists yet
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 // Load user details
                 UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
+                logger.debug("User details loaded for: {}", username);
 
                 // Validate token
                 if (jwtService.isTokenValid(jwt, userDetails)) {
@@ -67,13 +79,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                     // Set authentication in SecurityContext
                     SecurityContextHolder.getContext().setAuthentication(authToken);
+                    logger.info("Authentication successful for user: {}", username);
+                    logger.debug("User roles: {}", userDetails.getAuthorities());
                 } else {
+                    logger.warn("Invalid JWT token for user: {}", username);
                     throw new RuntimeException("Invalid token");
                 }
             }
         } catch (Exception e) {
             // Log exception but don't throw it
-            logger.error("JWT token validation failed: " + e.getMessage());
+            logger.error("JWT token validation failed: {}",  e.getMessage(), e);
 
             // Send 401 Unauthorized response
             // instead of a blank response it will return an expired JSON response

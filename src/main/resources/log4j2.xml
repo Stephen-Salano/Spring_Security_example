@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN">
+    <Properties>
+        <!-- Define standard log pattern -->
+        <Property name="LOG_PATTERN">%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</Property>
+        <!-- Define log path - adjust this to your preference -->
+        <Property name="LOG_PATH">logs</Property>
+    </Properties>
+
+    <Appenders>
+        <!-- Console Appender -->
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="${LOG_PATTERN}" />
+        </Console>
+
+        <!-- Rolling File Appender for all logs -->
+        <RollingFile name="FileAppender"
+                     fileName="${LOG_PATH}/application.log"
+                     filePattern="${LOG_PATH}/application-%d{yyyy-MM-dd}-%i.log">
+            <PatternLayout pattern="${LOG_PATTERN}" />
+            <Policies>
+                <SizeBasedTriggeringPolicy size="10MB" />
+                <TimeBasedTriggeringPolicy interval="1" />
+            </Policies>
+            <DefaultRolloverStrategy max="10" />
+        </RollingFile>
+
+        <!-- Security specific logs -->
+        <RollingFile name="SecurityAppender"
+                     fileName="${LOG_PATH}/security.log"
+                     filePattern="${LOG_PATH}/security-%d{yyyy-MM-dd}-%i.log">
+            <PatternLayout pattern="${LOG_PATTERN}" />
+            <Policies>
+                <SizeBasedTriggeringPolicy size="10MB" />
+                <TimeBasedTriggeringPolicy interval="1" />
+            </Policies>
+            <DefaultRolloverStrategy max="10" />
+        </RollingFile>
+
+        <!-- Error logs -->
+        <RollingFile name="ErrorAppender"
+                     fileName="${LOG_PATH}/error.log"
+                     filePattern="${LOG_PATH}/error-%d{yyyy-MM-dd}-%i.log">
+            <PatternLayout pattern="${LOG_PATTERN}" />
+            <Policies>
+                <SizeBasedTriggeringPolicy size="10MB" />
+                <TimeBasedTriggeringPolicy interval="1" />
+            </Policies>
+            <DefaultRolloverStrategy max="10" />
+        </RollingFile>
+    </Appenders>
+
+    <Loggers>
+        <!-- Security specific logger -->
+        <Logger name="com.example.spring_security.config" level="DEBUG" additivity="false">
+            <AppenderRef ref="SecurityAppender" />
+            <AppenderRef ref="Console" />
+        </Logger>
+
+        <!-- Authentication logger -->
+        <Logger name="com.example.spring_security.service.AuthService" level="INFO" additivity="false">
+            <AppenderRef ref="SecurityAppender" />
+            <AppenderRef ref="Console" />
+        </Logger>
+
+        <!-- JWT service logger -->
+        <Logger name="com.example.spring_security.service.JwtService" level="DEBUG" additivity="false">
+            <AppenderRef ref="SecurityAppender" />
+            <AppenderRef ref="Console" />
+        </Logger>
+
+        <!-- Controller logger -->
+        <Logger name="com.example.spring_security.controller" level="INFO" additivity="false">
+            <AppenderRef ref="FileAppender" />
+            <AppenderRef ref="Console" />
+        </Logger>
+
+        <!-- Service layer logger -->
+        <Logger name="com.example.spring_security.service" level="INFO" additivity="false">
+            <AppenderRef ref="FileAppender" />
+            <AppenderRef ref="Console" />
+        </Logger>
+
+        <!-- Spring Security logger -->
+        <Logger name="org.springframework.security" level="INFO" additivity="false">
+            <AppenderRef ref="SecurityAppender" />
+            <AppenderRef ref="Console" />
+        </Logger>
+
+        <!-- Log everything at ERROR level -->
+        <Logger name="com.example.spring_security" level="ERROR" additivity="false">
+            <AppenderRef ref="ErrorAppender" />
+            <AppenderRef ref="Console" />
+        </Logger>
+
+        <!-- Root logger -->
+        <Root level="INFO">
+            <AppenderRef ref="Console" />
+            <AppenderRef ref="FileAppender" />
+        </Root>
+    </Loggers>
+</Configuration>
