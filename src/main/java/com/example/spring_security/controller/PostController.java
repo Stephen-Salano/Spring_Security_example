@@ -1,6 +1,7 @@
 package com.example.spring_security.controller;
 
 import com.example.spring_security.dto.PostRequest;
+import com.example.spring_security.dto.PostResponse;
 import com.example.spring_security.entities.Post;
 import com.example.spring_security.service.JwtService;
 import com.example.spring_security.service.PostService;
@@ -22,13 +23,13 @@ public class PostController {
 
     //✅ Public Endpoint: Fetch all posts
     @GetMapping
-    public ResponseEntity<List<Post>> getAllPosts(){
+    public ResponseEntity<List<PostResponse>> getAllPosts(){
         return ResponseEntity.ok(postService.getAllPosts());
     }
 
     // 🔒 Secured Endpoint: Create a new post (requires authentication)
     @PostMapping("/user/create")
-    public ResponseEntity<Post> createPost(
+    public ResponseEntity<PostResponse> createPost(
             @Valid @RequestBody PostRequest postRequest,
             Authentication authentication
             ){
