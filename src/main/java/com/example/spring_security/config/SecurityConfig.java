@@ -5,6 +5,7 @@ import com.example.spring_security.service.JwtService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -46,6 +47,8 @@ public class SecurityConfig {
                         // everyone can access this endpoint for authentication
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/api/v1/posts").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/images/**").permitAll() // Allow GET for images
+                        .requestMatchers("/api/v1/images/**").authenticated() // required Auth
                         // Admins can access these endpoints
                         .requestMatchers("/admin/**").hasRole("ADMIN")
                         // Users can access these
