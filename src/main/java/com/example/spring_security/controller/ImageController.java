@@ -76,38 +76,45 @@ public class ImageController {
      *      not just it's metadata, they need an endpoint like `GET /api/v1/images/files/some-image-id.png`
      *      This endpoint will return the file contents-- just like when you visit a URL that shows a photo
      *      or downloads an image
-     * @param fileName whatever value is passed in the file name part of the URL, capture it and pass it as
+     * @param filename whatever value is passed in the file name part of the URL, capture it and pass it as
      *                 a String argument
      * @return Response entity that is the image
      *
      * This method makes the image file viewable and downloadable via URL
      */
     @GetMapping("/files/{filename:.+}") // allows dots in the path variable
-    public ResponseEntity<Resource> serveFile(@PathVariable String fileName){
+    public ResponseEntity<Resource> serveFile(@PathVariable String filename){
+        logger.info("Attempting to download file{}" , filename);
         /**
          * Go to disk and load this file as a Spring `Resource`(basically something you can send back in a HTTP response)
          * It relies on the `FileStorageImpl` class that actually reads from the `/uploads/...` folder
          */
-        Resource resource = fileStorageService.loadFile(fileName);
+        try {
+            Resource resource = fileStorageService.loadFile(filename);
 
-        /**
-         * Try to figure out what kind of file this is
-         * If it can't guess, it falls back to `application/octet-stream` which just means
-         *      "some binary file we don't recognize"
-         */
-        String contentType = Optional.ofNullable(
-                URLConnection.guessContentTypeFromName(resource.getFilename())
-        ).orElse("application/octet-stream");
+            /**
+             * Try to figure out what kind of file this is
+             * If it can't guess, it falls back to `application/octet-stream` which just means
+             *      "some binary file we don't recognize"
+             */
+            String contentType = Optional.ofNullable(
+                    URLConnection.guessContentTypeFromName(resource.getFilename())
+            ).orElse("application/octet-stream");
+            logger.info("Guessed content{} for file{}", contentType, filename);
 
-        /**
-         * This builds the actual HTTP response
-         *      - Status 200 OK ✅
-         *      - sets the Content-type header based on the file
-         *      - It attaches the file bytes as the response body
-         *
-         */
-        return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(contentType))
-                .body(resource);
+            /**
+             * This builds the actual HTTP response
+             *      - Status 200 OK ✅
+             *      - sets the Content-type header based on the file
+             *      - It attaches the file bytes as the response body
+             *
+             */
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(contentType))
+                    .body(resource);
+        } catch (Exception e) {
+            logger.info("Failed to serve file{}", filename);
+            throw e;
+        }
     }
 }
