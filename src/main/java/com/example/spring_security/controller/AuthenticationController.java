@@ -4,14 +4,18 @@ import com.example.spring_security.dto.AuthenticationRequest;
 import com.example.spring_security.dto.AuthenticationResponse;
 import com.example.spring_security.dto.RegisterRequest;
 import com.example.spring_security.service.AuthService;
+import com.example.spring_security.service.JwtService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.Value;
+import org.apache.coyote.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -20,6 +24,7 @@ public class AuthenticationController {
 
     private static final Logger logger = LoggerFactory.getLogger(AuthenticationController.class);
     private final AuthService authService;
+    private final JwtService jwtService;
 
     @PostMapping("/register")
     public ResponseEntity<AuthenticationResponse> register(
@@ -78,6 +83,23 @@ public class AuthenticationController {
             logger.warn("Token refresh failed: {}", e.getMessage(), e);
             throw e;
         }
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(HttpServletRequest request){
+        // Get the authenticated user
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")){
+            String jwt = authHeader.substring(7);
+            String username = jwtService.extractUserName(jwt);
+
+            if (username != null){
+                logger.info("Logout request for user: {}", username);
+                authService.logout(username);
+                return ResponseEntity.ok().body(Map.of("message", "Logged out successfully"));
+            }
+        }
+        return ResponseEntity.badRequest().body(Map.of("message", "Invalid token"));
     }
 
     // Extract a client's IP address from request

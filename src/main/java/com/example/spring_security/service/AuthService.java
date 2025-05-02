@@ -5,9 +5,11 @@ import com.example.spring_security.Users.User;
 import com.example.spring_security.dto.AuthenticationRequest;
 import com.example.spring_security.dto.AuthenticationResponse;
 import com.example.spring_security.dto.RegisterRequest;
+import com.example.spring_security.entities.RefreshToken;
 import com.example.spring_security.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -24,6 +26,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
+    private final RefreshTokenService refreshTokenService;
 
     @Transactional
     public AuthenticationResponse register(RegisterRequest request){
@@ -45,14 +48,15 @@ public class AuthService {
                 .build();
 
         // Save user
-        userRepository.save(user);
+        User savedUser = userRepository.save(user);
 
         //Generate Tokens
         String accessToken = jwtService.generateAccessToken(user);
-        String refreshToken = jwtService.generateRefreshToken(user);
+        // Create and store refresh token
+        RefreshToken refreshToken = refreshTokenService.createRefreshToken(savedUser);
 
         return new AuthenticationResponse(
-                accessToken, refreshToken, System.currentTimeMillis()
+                accessToken, refreshToken.getToken(), System.currentTimeMillis()
                 + jwtService.getAccessTokenExpiration()
         );
     }
@@ -74,35 +78,41 @@ public class AuthService {
 
         // Generate Tokens
         String accessToken = jwtService.generateAccessToken(user);
-        String refreshToken = jwtService.generateRefreshToken(user);
+
+        // Create and store refresh token
+        RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
 
         return new AuthenticationResponse(
-                accessToken, refreshToken, System.currentTimeMillis() + jwtService.getAccessTokenExpiration()
+                accessToken, refreshToken.getToken(), System.currentTimeMillis() + jwtService.getAccessTokenExpiration()
         );
     }
 
     @Transactional
-    public AuthenticationResponse refreshToken(String refreshToken){
-        // Extract username from refresh token
-        String username = jwtService.extractUserName(refreshToken);
-        if (username == null) {
-            throw new RuntimeException("Invalid refresh token");
-        }
+    public AuthenticationResponse refreshToken(String refreshTokenStr){
+        // find the token in the database
+        RefreshToken refreshToken = refreshTokenService.findByToken(refreshTokenStr)
+                .orElseThrow(() -> new RuntimeException("Refresh token not found"));
 
-        // find user
-        User user = userRepository.findByUserName(username)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+        // Verifying token is not expired
+        refreshTokenService.verifyExpiration(refreshToken);
 
-        //Validate refresh token
-        if (!jwtService.isTokenValid(refreshToken, user)) {
-            throw new RuntimeException("Invalid refresh token");
-        }
+        // Get user from token
+        User user = refreshToken.getUser();
 
         // Generate new access Token
         String accessToken = jwtService.generateAccessToken(user);
 
         return new AuthenticationResponse(
-                accessToken, refreshToken, System.currentTimeMillis() + jwtService.getAccessTokenExpiration()
+                accessToken, refreshTokenStr, System.currentTimeMillis() + jwtService.getAccessTokenExpiration()
         );
+    }
+
+    // Add Logout functionality
+    @Transactional
+    public void logout(String username){
+        User user = userRepository.findByUserName(username)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+
+        refreshTokenService.deleteByUserId(user);
     }
 }
