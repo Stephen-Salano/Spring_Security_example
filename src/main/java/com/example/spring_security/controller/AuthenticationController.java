@@ -48,7 +48,7 @@ public class AuthenticationController {
         try{
             AuthenticationResponse response = authService.authenticate(request);
             logger.info("Authentication successful for: {}", request.userNameOrEmail());
-            return ResponseEntity.ok(authService.authenticate(request));
+            return ResponseEntity.ok(response);
         } catch (Exception e){
             logger.warn("Authentication failed for: {} : {}", request.userNameOrEmail(), e.getMessage());
             throw e;
