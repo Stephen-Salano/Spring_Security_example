@@ -96,6 +96,12 @@
 			<artifactId>spring-boot-starter-log4j2</artifactId>
 			<version>3.4.4</version>
 		</dependency>
+		<!-- Allows calling FFMPEG methods directly from Java  -->
+		<dependency>
+			<groupId>org.bytedeco</groupId>
+			<artifactId>javacv-platform</artifactId>
+			<version>1.5.11</version>
+		</dependency>
 	</dependencies>
 
 	<build>

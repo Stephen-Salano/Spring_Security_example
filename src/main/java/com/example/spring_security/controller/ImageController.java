@@ -14,6 +14,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.net.URLConnection;
 import java.util.List;
 import java.util.Optional;
@@ -33,7 +34,7 @@ public class ImageController {
     public ResponseEntity<ImageResponse> createImage(
             @RequestParam("postId") UUID postId,
             @RequestParam("file")MultipartFile file
-            ){
+            ) throws IOException {
         logger.info("Creating a new image entry{}", file.getOriginalFilename());
         return ResponseEntity
                 .status(HttpStatus.CREATED)
@@ -66,7 +67,7 @@ public class ImageController {
     public ResponseEntity<ImageResponse> updateImage(
             @PathVariable UUID id,
             @RequestPart("file") MultipartFile file
-    ){
+    ) throws IOException {
         return ResponseEntity.ok(imageService.updateImage(id, file));
 
     }

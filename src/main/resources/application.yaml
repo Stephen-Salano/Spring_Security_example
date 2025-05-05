@@ -26,3 +26,8 @@ image:
   max-file-size: 10MB
   allowed-types: image/jpeg,image/png,image/gif
   storage-path: images
+  processing:
+    max-width: 2000 #px, downscale if wider
+    max-height: 2000 #px, downscale if taller
+    compression-threshold: 2MB # only compress if file > this
+    compression-quality: 0.8 3 # JPEG quality

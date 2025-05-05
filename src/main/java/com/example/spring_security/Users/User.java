@@ -33,6 +33,7 @@ public class User implements UserDetails {
     @NotBlank
     @Email
     private String email;
+    @Basic(fetch = FetchType.LAZY)
     @NotBlank
     private String password;
     @Enumerated(EnumType.STRING)

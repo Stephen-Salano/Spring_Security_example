@@ -1,25 +1,30 @@
 package com.example.spring_security.service;
 
 import com.example.spring_security.config.FileStorageProperties;
+import com.example.spring_security.config.ImageProcessingProperties;
 import com.example.spring_security.dto.ImageResponse;
 import com.example.spring_security.entities.Image;
 import com.example.spring_security.entities.Post;
-import com.example.spring_security.exception.FileNotFoundException;
 import com.example.spring_security.exception.FileValidationException;
 import com.example.spring_security.repository.ImageRepository;
 import com.example.spring_security.repository.PostRepository;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
-import org.springframework.beans.factory.annotation.Value;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.unit.DataSize;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+@RequiredArgsConstructor
 @Service
 public class ImageServiceImpl implements ImageService{
 
@@ -28,25 +33,12 @@ public class ImageServiceImpl implements ImageService{
     private final PostRepository postRepository;
     private final FileStorageService fileStorageService;
     private final FileStorageProperties properties;
-//    private final DataSize maxFileSize;
-//    private final List<String> allowedTypes;
-//    private final String storagePathPrefix;
-
-    public ImageServiceImpl(
-            ImageRepository imageRepository,
-            PostRepository postRepository,
-            FileStorageService fileStorageService,
-            FileStorageProperties properties
-            ){
-        this.imageRepository = imageRepository;
-        this.postRepository = postRepository;
-        this.fileStorageService = fileStorageService;
-        this.properties = properties;
-    }
+    private  final ImageProcessingProperties imageProcessingProperties;
+    private final ImageProcessingService imageProcessingService;
 
     @Override
     @Transactional
-    public ImageResponse createImage(UUID postId, MultipartFile file){
+    public ImageResponse createImage(UUID postId, MultipartFile file) throws IOException {
        // look up if Post
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new EntityNotFoundException(" Post not found with ID: " + postId));
@@ -57,12 +49,29 @@ public class ImageServiceImpl implements ImageService{
         // 3. store on disk
         String storedFileName = fileStorageService.storeFile(file);
 
+        //  Build file pointing to the stored image
+        File storedFile = properties
+                .getFullStoragepath()
+                .resolve(storedFileName)
+                .toFile();
+        // Optimize the image
+        File optimized = imageProcessingService.process(storedFile);
+
+        // if optimization created a new file, overwrite the original
+        if (!optimized.equals(storedFile)){
+            Files.copy(
+                    optimized.toPath(),
+                    storedFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+            );
+        }
+
         // 4. Build & save Entity
         String publicUrl = fileStorageService.getFileUrl(storedFileName);
         Image image = Image.builder()
                 .fileName(file.getOriginalFilename())
                 .fileType(file.getContentType())
-                .fileSize(file.getSize())
+                .fileSize(storedFile.length()) // updated size after processing
                 .filePath(publicUrl)
                 .post(post)
                 .build();
@@ -115,7 +124,7 @@ public class ImageServiceImpl implements ImageService{
 
     @Override
     @Transactional
-    public ImageResponse updateImage(UUID id, MultipartFile file) {
+    public ImageResponse updateImage(UUID id, MultipartFile file) throws IOException {
         // 1. Look up the existing image
         Image image = imageRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException(" Image not found with Id: " + id));
@@ -128,19 +137,29 @@ public class ImageServiceImpl implements ImageService{
         // 3 Validate ne file
         validateFile(file, properties.getMaxFileSize(), properties.getAllowedTypes());
 
-        // Store New file
+        // 4. Store New file under a fresh UUID name
         String newStored = fileStorageService.storeFile(file);
-        String newUrl = fileStorageService.getFileUrl(newStored);
+        File storedFile = properties.getFullStoragepath().resolve(newStored).toFile();
+        // 5. Optimize (resize + compress) to handle both resizing and compressing based on thresholds
+        File optimized = imageProcessingService.process(storedFile);
 
+        // 6. Overwrite only if optimization created a new file
+        if (!optimized.equals(storedFile)){
+            Files.copy(
+                    optimized.toPath(),
+                    storedFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+            );
+        }
 
-        // 4. update image properties
+        // 7. update image properties
         image.setFileName(file.getOriginalFilename());
         image.setFileType(file.getContentType());
-        image.setFileSize(file.getSize());
-        image.setFilePath(newUrl);
+        image.setFileSize(storedFile.length());
+        image.setFilePath(fileStorageService.getFileUrl(newStored));
         // The post remains unchanged
 
-        // 5. Save the updated image
+        // 8. Save the updated image
         Image updatedImage = imageRepository.save(image);
         return ImageResponse.fromImage(updatedImage);
     }
