@@ -31,3 +31,5 @@ image:
     max-height: 2000 #px, downscale if taller
     compression-threshold: 2MB # only compress if file > this
     compression-quality: 0.8 3 # JPEG quality
+    supported-types: image/jpeg, image/png, image/gif # types supported by FFmpeg processing
+    enable-detailed-logging: true # enable detailed logging for image processing
