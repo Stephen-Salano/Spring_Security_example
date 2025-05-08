@@ -1,12 +1,15 @@
 package com.example.spring_security.controller;
 
+import com.example.spring_security.dto.ImageDetailsResponse;
 import com.example.spring_security.dto.ImageResponse;
+import com.example.spring_security.dto.ImageUploadRequest;
 import com.example.spring_security.service.FileStorageService;
 import com.example.spring_security.service.ImageService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -15,7 +18,9 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.net.URL;
 import java.net.URLConnection;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -32,13 +37,29 @@ public class ImageController {
     @PostMapping
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ImageResponse> createImage(
-            @RequestParam("postId") UUID postId,
-            @RequestParam("file")MultipartFile file
-            ) throws IOException {
-        logger.info("Creating a new image entry{}", file.getOriginalFilename());
+            @RequestParam(value = "request", required = false)ImageUploadRequest request,
+            @RequestParam("file") MultipartFile file
+            )throws IOException{
+        UUID postId = null;
+
+        // Extract postID from Request if available, otherwise try and get from param
+        if (request != null && request.postId() != null){
+            try{
+                postId = UUID.fromString(request.postId());
+            } catch (IllegalArgumentException e){
+                throw new IllegalArgumentException("Invalid post ID format");
+            }
+        }
+        if (postId == null){
+            throw new IllegalArgumentException("Post Id is required");
+        }
+
+        logger.info("Creating a new file image entry: {} with optimized preferences: {}",
+                file.getOriginalFilename(), request != null ? request:"default");
+
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(imageService.createImage(postId, file));
+                .body(imageService.createImage(postId, file, request));
     }
 
     // Get image by ID (public endpoint)
@@ -66,9 +87,10 @@ public class ImageController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ImageResponse> updateImage(
             @PathVariable UUID id,
+            @RequestPart(value = "request", required = false) ImageUploadRequest request,
             @RequestPart("file") MultipartFile file
     ) throws IOException {
-        return ResponseEntity.ok(imageService.updateImage(id, file));
+        return ResponseEntity.ok(imageService.updateImage(id, file, request));
 
     }
 
@@ -118,4 +140,100 @@ public class ImageController {
             throw e;
         }
     }
+
+    // Additional endpoints for accessing either original images and optimization status
+
+    /**
+     * Get detailed information about an image including optimzation stats
+     */
+    @GetMapping("/{id}/details")
+    public ResponseEntity<ImageDetailsResponse> getImageDetails(
+            @PathVariable UUID id
+    ){
+        logger.info("Fetching detailed image information for ID: {}", id);
+        return ResponseEntity.ok(imageService.getImageDetails(id));
+    }
+
+    /**
+     * Get the original unoptimized version of an image
+     */
+
+    @GetMapping("/{id}/original")
+    public ResponseEntity<Resource> getOriginalImage(@PathVariable UUID id){
+        logger.info("Fetching original image for ID: {}", id);
+
+        // Get the image entity
+        ImageResponse image = imageService.getImageById(id);
+
+        // Etxract the filename form the original path
+        String originalFilePath = image.originalFilePath();
+        String originalFileName = Path.of(originalFilePath).getFileName().toString();
+
+        try{
+            // Load the resource
+            Resource resource = fileStorageService.loadFile(originalFileName);
+
+            // Determine content type
+            String contentType = Optional.of(
+                    URLConnection.guessContentTypeFromName(resource.getFilename())
+            ).orElse("application/octet-stream");
+
+            // Set content disposition for browser download
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(contentType))
+                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                            "inline; filename=\"" + image.fileName() + "\"")
+                    .body(resource);
+        }catch (Exception e){
+            logger.error("Failed to serve original file: {}", originalFileName, e);
+            throw e;
+        }
+    }
+
+    // Endpoint to serve files from the original directory
+    @GetMapping("/files/original/{filename:.+")
+    public ResponseEntity<Resource> serveOriginalFile(@PathVariable String filename){
+        logger.info("Attempting to download original file: {}", filename);
+
+        try{
+            Resource resource = fileStorageService.loadFile(filename);
+
+            String contentType = Optional.ofNullable(
+                    URLConnection.guessContentTypeFromName(resource.getFilename())
+            ).orElse("application/octet-stream");
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(contentType))
+                    .body(resource);
+        }catch (Exception e){
+            logger.error("Failed to serve original file: {}", filename, e);
+            throw e;
+        }
+    }
+
+    // ENdpoint to serve files from the optimized directory
+    @GetMapping("/files/optimized/{filename:.+}")
+    public ResponseEntity<Resource> serveOptimizedFile(
+            @PathVariable String filename
+    ){
+        logger.info("Attempting to download optimized file: {}", filename);
+
+        try{
+            Resource resource = fileStorageService.loadFile(filename);
+
+            String contentType = Optional.ofNullable(
+                    URLConnection.guessContentTypeFromName(resource.getFilename())
+            ).orElse("application/octet-stream");
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType(contentType))
+                    .body(resource);
+        }catch (Exception e){
+            logger.error("Failed to serve optimized file: {}", filename);
+            throw e;
+        }
+    }
+
+    //
+
 }

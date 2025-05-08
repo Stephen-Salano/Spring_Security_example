@@ -1,8 +1,9 @@
 package com.example.spring_security.service;
 
 import com.example.spring_security.config.FileStorageProperties;
-import com.example.spring_security.config.ImageProcessingProperties;
+import com.example.spring_security.dto.ImageDetailsResponse;
 import com.example.spring_security.dto.ImageResponse;
+import com.example.spring_security.dto.ImageUploadRequest;
 import com.example.spring_security.entities.Image;
 import com.example.spring_security.entities.Post;
 import com.example.spring_security.exception.FileValidationException;
@@ -11,15 +12,15 @@ import com.example.spring_security.repository.PostRepository;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.unit.DataSize;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -33,12 +34,13 @@ public class ImageServiceImpl implements ImageService{
     private final PostRepository postRepository;
     private final FileStorageService fileStorageService;
     private final FileStorageProperties properties;
-    private  final ImageProcessingProperties imageProcessingProperties;
-    private final ImageProcessingService imageProcessingService;
+    private final ImageOptimizationService imageOptimizationService;
+
+    private static final Logger logger = LoggerFactory.getLogger(ImageServiceImpl.class);
 
     @Override
     @Transactional
-    public ImageResponse createImage(UUID postId, MultipartFile file) throws IOException {
+    public ImageResponse createImage(UUID postId, MultipartFile file) {
        // look up the Post
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new EntityNotFoundException(" Post not found with ID: " + postId));
@@ -51,48 +53,70 @@ public class ImageServiceImpl implements ImageService{
 
         //  Build file pointing to the original image
         File originalFile = properties
-                .getFullStoragepath()
+                .getOriginalStoragePath()
                 .resolve(originalFileName)
                 .toFile();
         // Store original file size
         long originalFileSize = originalFile.length();
-
-        // Optimize the image
-        File optimizedFile = imageProcessingService.process(originalFile);
-
-        // Track if optimization was performed
-        boolean wasOptimized =  !optimizedFile.equals(originalFile);
-
-        // Store optimized file (if optimization occurred)
-        String optimizedFileName;
-        if (wasOptimized){
-            optimizedFileName = fileStorageService.storeOptimizedFile(optimizedFile);
-        } else {
-            // of no optimization was needed, just use the original
-            optimizedFileName = originalFileName;
-        }
-
         // Generate Urls for both versions
         String originalUrl = fileStorageService.getOriginalFileUrl(originalFileName);
-        String optimizedUrl = wasOptimized?
-                fileStorageService.getOptimizedFileUrl(optimizedFileName) :
-                originalUrl;
 
-        // Build & save Entity
+        boolean shouldOptimize = imageOptimizationService.shouldOptimize(originalFile);
+
+        String optimizedFileName;
+        String optimizedUrl;
+        long finalFileSize = 0;
+        boolean wasOptimized = false;
+
+        if (shouldOptimize){
+            try{
+                // process the image through our optimization pipeline
+                File optimizedFile = imageOptimizationService.optimizeImage(originalFile);
+                wasOptimized = !optimizedFile.equals(originalFile);
+
+                if (wasOptimized){
+                    // Store the optimized version
+                    optimizedFileName = fileStorageService.storeOptimizedFile(optimizedFile);
+                    optimizedUrl = fileStorageService.getOptimizedFileUrl(optimizedFileName);
+                }else {
+                    // if processing didn't create a new file, use original
+                    optimizedFileName = originalFileName;
+                    optimizedUrl = originalUrl;
+                    finalFileSize = originalFileSize;
+                }
+            }catch (Exception e){
+                // On optimization failure, fall back to the original
+                logger.error("Image optimization failed, using original: {}", e.getMessage());
+                optimizedFileName = originalFileName;
+                optimizedUrl = originalUrl;
+                finalFileSize = originalFileSize;
+                wasOptimized = false;
+            }
+        } else {
+            // No optimization needed
+            optimizedFileName = originalFileName;
+            optimizedUrl = originalUrl;
+            finalFileSize = originalFileSize;
+        }
+
         Image image = Image.builder()
                 .fileName(file.getOriginalFilename())
                 .fileType(file.getContentType())
-                .fileSize(wasOptimized ? optimizedFile.length() : originalFileSize)
-                .filePath(optimizedUrl)
-                .originalFilePath(originalUrl)
-                .originalFileSize(String.valueOf(originalFileSize))
+                .fileSize(finalFileSize)
+                .filePath(optimizedUrl) // Main pain points to optimized if available
+                .originalFilePath(String.valueOf(originalFileSize))
                 .optimized(wasOptimized)
                 .post(post)
                 .build();
-        Image saved = imageRepository.save(image) ;
 
-        // 5 Map to DTO
+        Image saved = imageRepository.save(image);
+
         return ImageResponse.fromImage(saved);
+    }
+
+    @Override
+    public ImageResponse createImage(UUID postId, MultipartFile file, ImageUploadRequest request) throws IOException {
+        return null;
     }
 
     private void validateFile(MultipartFile file, DataSize maxFileSize, List<String> allowedTypes) {
@@ -124,6 +148,11 @@ public class ImageServiceImpl implements ImageService{
     }
 
     @Override
+    public ImageDetailsResponse getImageDetails(UUID id) {
+        return null;
+    }
+
+    @Override
     @Transactional
     public void deleteImage(UUID id) {
        Image image = imageRepository.findById(id)
@@ -138,43 +167,90 @@ public class ImageServiceImpl implements ImageService{
 
     @Override
     @Transactional
-    public ImageResponse updateImage(UUID id, MultipartFile file) throws IOException {
+    public ImageResponse updateImage(UUID id, MultipartFile file) {
         // 1. Look up the existing image
         Image image = imageRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException(" Image not found with Id: " + id));
 
-        // 2. Delete the old file
-        String oldPath = image.getFilePath();
-        String oldFileName = Path.of(oldPath).getFileName().toString();
-        fileStorageService.deleteFile(oldFileName);
-
-        // 3 Validate ne file
-        validateFile(file, properties.getMaxFileSize(), properties.getAllowedTypes());
-
-        // 4. Store New file under a fresh UUID name
-        String newStored = fileStorageService.storeFile(file);
-        File storedFile = properties.getFullStoragepath().resolve(newStored).toFile();
-        // 5. Optimize (resize + compress) to handle both resizing and compressing based on thresholds
-        File optimized = imageProcessingService.process(storedFile);
-
-        // 6. Overwrite only if optimization created a new file
-        if (!optimized.equals(storedFile)){
-            Files.copy(
-                    optimized.toPath(),
-                    storedFile.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING
-            );
+        // Delete both original and optimized versions if they exist
+        if (image.getFilePath() != null){
+            String optimizedFileName = Path.of(image.getFilePath()).getFileName().toString();
+            fileStorageService.deleteFile(optimizedFileName);
         }
 
-        // 7. update image properties
+        if (image.getOriginalFilePath() != null && !image.getOriginalFilePath().equals(image.getFilePath())){
+            String originalFileName = Path.of(image.getOriginalFilePath()).getFileName().toString();
+            fileStorageService.deleteFile(originalFileName);
+        }
+
+        // validate new file
+        validateFile(file, properties.getMaxFileSize(), properties.getAllowedTypes());
+
+        // Store original file
+        String originalFileName = fileStorageService.storeOriginalFile(file);
+        File originalFile = properties.getOriginalStoragePath().resolve(originalFileName).toFile();
+        long originalFileSize = originalFile.length();
+        String originalUrl = fileStorageService.getOriginalFileUrl(originalFileName);
+
+        // Determine if optimization is needed
+        boolean shouldOptimize = imageOptimizationService.shouldOptimize(originalFile);
+
+        // Variables to track final state
+        String optimizedFileName;
+        String optimizedUrl;
+        long finalFileSize;
+        boolean wasOptimized = false;
+
+        if (shouldOptimize){
+            try{
+                // Process the image through our optimization pipeline
+                File optimizedFile = imageOptimizationService.optimizeImage(originalFile);
+                wasOptimized = !optimizedFile.equals(originalFile);
+
+                if (wasOptimized){
+                    // Store the optimized version
+                    optimizedFileName = fileStorageService.storeOptimizedFile(optimizedFile);
+                    optimizedUrl = fileStorageService.getOptimizedFileUrl(optimizedFileName);
+                    finalFileSize = optimizedFile.length();
+                } else {
+                    // If processing didn't create a new file, use original
+                    optimizedFileName = originalFileName;
+                    optimizedUrl = originalUrl;
+                    finalFileSize = originalFileSize;
+                }
+            }catch (Exception e){
+                // On optimization failure, fall back to the original
+                logger.error("Image optimization failed, using original: {}", e.getMessage());
+
+                optimizedFileName = originalFileName;
+                optimizedUrl = originalUrl;
+                finalFileSize = originalFileSize;
+                wasOptimized = false;
+            }
+
+        }else {
+            // No optimization needed
+            optimizedFileName = originalFileName;
+            optimizedUrl = originalUrl;
+            finalFileSize = originalFileSize;
+        }
+
+        // Updating the image entity
         image.setFileName(file.getOriginalFilename());
         image.setFileType(file.getContentType());
-        image.setFileSize(storedFile.length());
-        image.setFilePath(fileStorageService.getFileUrl(newStored));
-        // The post remains unchanged
+        image.setFileSize(finalFileSize);
+        image.setFilePath(optimizedUrl);
+        image.setOriginalFilePath(originalUrl);
+        image.setOriginalFileSize(String.valueOf(originalFileSize));
+        image.setOptimized(wasOptimized);
+        // Post remains unchanged
 
-        // 8. Save the updated image
         Image updatedImage = imageRepository.save(image);
         return ImageResponse.fromImage(updatedImage);
+    }
+
+    @Override
+    public ImageResponse updateImage(UUID id, MultipartFile file, ImageUploadRequest request) throws IOException {
+        return null;
     }
 }
