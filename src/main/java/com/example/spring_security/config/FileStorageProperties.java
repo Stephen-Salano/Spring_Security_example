@@ -23,10 +23,28 @@ public class FileStorageProperties {
     private String storagePath;
     private List<String> allowedTypes;
     private DataSize maxFileSize; // Handle values like 10MB natively
+    private String originalImagePath; // path for storing original images
+    private String optimizedImagePath; // Path for storing optimized images
 
     // Derived property for absolute path
     public Path getFullStoragepath(){
         return Paths.get(storagePath).toAbsolutePath().normalize();
+    }
+
+    /**
+     * Gets the full absolute path for storing original images
+     * @return Path object for original images storage
+     */
+    public Path getOriginalStoragePath(){
+        return originalImagePath != null?
+                Paths.get(originalImagePath).toAbsolutePath().normalize():
+                Paths.get(storagePath, "original").toAbsolutePath().normalize();
+    }
+
+    public Path getOptimizedStoragePath(){
+        return optimizedImagePath != null?
+                Paths.get(optimizedImagePath).toAbsolutePath().normalize():
+                Paths.get(storagePath, "optimized").toAbsolutePath().normalize();
     }
 
 }

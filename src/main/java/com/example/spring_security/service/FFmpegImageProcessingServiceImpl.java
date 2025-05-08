@@ -179,7 +179,8 @@ public class FFmpegImageProcessingServiceImpl implements ImageProcessingService{
      */
     @Override
     public File compress(File inputFile) throws IOException {
-        if (validateInputFile(inputFile)){
+        // Fix: Validate the input file and return early if not valid
+        if (!validateInputFile(inputFile)){
             return inputFile;
         }
 

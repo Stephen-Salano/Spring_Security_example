@@ -39,7 +39,7 @@ public class ImageServiceImpl implements ImageService{
     @Override
     @Transactional
     public ImageResponse createImage(UUID postId, MultipartFile file) throws IOException {
-       // look up if Post
+       // look up the Post
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new EntityNotFoundException(" Post not found with ID: " + postId));
 
@@ -47,32 +47,46 @@ public class ImageServiceImpl implements ImageService{
         validateFile(file, properties.getMaxFileSize(), properties.getAllowedTypes());
 
         // 3. store on disk
-        String storedFileName = fileStorageService.storeFile(file);
+        String originalFileName = fileStorageService.storeOriginalFile(file);
 
-        //  Build file pointing to the stored image
-        File storedFile = properties
+        //  Build file pointing to the original image
+        File originalFile = properties
                 .getFullStoragepath()
-                .resolve(storedFileName)
+                .resolve(originalFileName)
                 .toFile();
-        // Optimize the image
-        File optimized = imageProcessingService.process(storedFile);
+        // Store original file size
+        long originalFileSize = originalFile.length();
 
-        // if optimization created a new file, overwrite the original
-        if (!optimized.equals(storedFile)){
-            Files.copy(
-                    optimized.toPath(),
-                    storedFile.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING
-            );
+        // Optimize the image
+        File optimizedFile = imageProcessingService.process(originalFile);
+
+        // Track if optimization was performed
+        boolean wasOptimized =  !optimizedFile.equals(originalFile);
+
+        // Store optimized file (if optimization occurred)
+        String optimizedFileName;
+        if (wasOptimized){
+            optimizedFileName = fileStorageService.storeOptimizedFile(optimizedFile);
+        } else {
+            // of no optimization was needed, just use the original
+            optimizedFileName = originalFileName;
         }
 
-        // 4. Build & save Entity
-        String publicUrl = fileStorageService.getFileUrl(storedFileName);
+        // Generate Urls for both versions
+        String originalUrl = fileStorageService.getOriginalFileUrl(originalFileName);
+        String optimizedUrl = wasOptimized?
+                fileStorageService.getOptimizedFileUrl(optimizedFileName) :
+                originalUrl;
+
+        // Build & save Entity
         Image image = Image.builder()
                 .fileName(file.getOriginalFilename())
                 .fileType(file.getContentType())
-                .fileSize(storedFile.length()) // updated size after processing
-                .filePath(publicUrl)
+                .fileSize(wasOptimized ? optimizedFile.length() : originalFileSize)
+                .filePath(optimizedUrl)
+                .originalFilePath(originalUrl)
+                .originalFileSize(String.valueOf(originalFileSize))
+                .optimized(wasOptimized)
                 .post(post)
                 .build();
         Image saved = imageRepository.save(image) ;

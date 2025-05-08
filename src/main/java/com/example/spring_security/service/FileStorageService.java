@@ -3,6 +3,8 @@ package com.example.spring_security.service;
 import org.springframework.core.io.Resource;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
+
 /***
  * This is a core abstraction that defines what operations your file storage layer must support
  * without specifying how they're implemented
@@ -21,5 +23,13 @@ public interface FileStorageService {
 
     // Returns the public URL to the file ()
     String getFileUrl(String fileName);
+
+    String storeOriginalFile(MultipartFile file);
+
+    String storeOptimizedFile(File file);
+
+    String getOriginalFileUrl(String fileName);
+
+    String getOptimizedFileUrl(String fileName);
 
 }

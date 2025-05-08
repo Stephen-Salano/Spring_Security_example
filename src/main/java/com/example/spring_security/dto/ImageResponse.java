@@ -11,6 +11,9 @@ public record ImageResponse(
         String fileType,
         Long fileSize,
         String filePath,
+        String originalFilePath,
+        String originalFileSize,
+        boolean optimized,
         LocalDateTime uploadedAt,
         UUID postId
 ) {
@@ -22,6 +25,9 @@ public record ImageResponse(
                 image.getFileType(),
                 image.getFileSize(),
                 image.getFilePath(),
+                image.getOriginalFilePath(),
+                image.getOriginalFileSize(),
+                image.isOptimized(),
                 image.getUploadedAt(),
                 image.getPost() != null ? image.getPost().getId() : null
         );

@@ -28,6 +28,12 @@ public class Image {
     // URL path to image
     @Column(nullable = true)
     private String filePath;
+    @Column(nullable = true)
+    private String originalFilePath;
+    @Column(nullable = true)
+    private String originalFileSize;
+    @Column(nullable = false)
+    private boolean optimized;
     @Column(nullable = false)
     private LocalDateTime uploadedAt;
 
